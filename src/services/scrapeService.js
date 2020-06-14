@@ -47,11 +47,11 @@ export async function scrapeSingleProduct(productId) {
     });
     let inventoryLeft = -1;
     let couldEstimateInventory = false;
-    if(productInfo.availability.includes("left in stock")) {
+    if(productInfo.availability?.includes("left in stock")) {
         couldEstimateInventory = true;
         inventoryLeft = productInfo.availability.replace(/[^0-9]/g, '').trim();
     }
-    else if(productInfo.availability.includes("In Stock")) {
+    else if(productInfo.availability?.includes("In Stock")) {
         await page.waitFor(500);
         await page.click("#add-to-cart-button");
         await page.waitForNavigation();
