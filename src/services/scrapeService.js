@@ -45,7 +45,40 @@ export async function scrapeSingleProduct(productId) {
             "features": formattedFeatures
         };
     });
-    browser.close();
-    console.log(productInfo);
+    let inventoryLeft = -1;
+    let couldEstimateInventory = false;
+    if(productInfo.availability.includes("left in stock")) {
+        couldEstimateInventory = true;
+        inventoryLeft = productInfo.availability.replace(/[^0-9]/g, '').trim();
+    }
+    else if(productInfo.availability.includes("In Stock")) {
+        await page.waitFor(500);
+        await page.click("#add-to-cart-button");
+        await page.waitForNavigation();
+        await page.waitFor(500);
+        await page.click("#hlb-view-cart-announce");
+        await page.waitFor(2000);
+        await page.click("select.a-native-dropdown");
+        await page.waitFor(500);
+        await page.click("a#dropdown1_10");
+        await page.waitFor(500);
+        await page.type('input.sc-quantity-textfield', '999', {delay: 20});
+        await page.waitFor(500);
+        await page.click("a#a-autoid-1-announce");
+        await page.waitFor(1000);
+        const popupDom = "div.a-box-inner.a-alert-container";
+        const popupContent = await page.$(popupDom);
+        if(popupContent !== null) {
+
+            const popupText = await page.evaluate(popupContent => popupContent.innerText, popupContent);
+            if(popupText.includes("This seller has only")) {
+                couldEstimateInventory = true;
+                inventoryLeft = popupText.replace(/[^0-9]/g, '').trim();
+            }
+        }
+    }
+    productInfo["inventoryLeft"] = inventoryLeft;
+    productInfo["couldEstimateInventory"] = couldEstimateInventory;
+    await browser.close();
     return productInfo;
 }
