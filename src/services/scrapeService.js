@@ -13,20 +13,20 @@ export async function scrapeSingleProduct(productId) {
 
     const productInfo = await page.evaluate(() => {
 
-        let title = document.body.querySelector('#productTitle').innerText;
+        let title = document.body.querySelector('#productTitle')?.innerText;
 
-        let reviewCount = document.body.querySelector('#acrCustomerReviewText').innerText;
+        let reviewCount = document.body.querySelector('#acrCustomerReviewText')?.innerText;
         let formattedReviewCount = reviewCount.replace(/[^0-9]/g, '').trim();
 
         let ratingElement = document.body.querySelector('.a-icon.a-icon-star').getAttribute('class');
         let integer = ratingElement.replace(/[^0-9]/g, '').trim();
         let parsedRating = parseInt(integer) / 10;
 
-        let availability = document.body.querySelector('#availability').innerText;
+        let availability = document.body.querySelector('#availability')?.innerText;
 
-        let price = document.body.querySelector('#priceblock_ourprice').innerText;
+        let price = document.body.querySelector('#priceblock_ourprice')?.innerText;
 
-        let description = document.body.querySelector('#renewedProgramDescriptionAtf').innerText;
+        let description = document.body.querySelector('#renewedProgramDescriptionAtf')?.innerText;
 
         let features = document.body.querySelectorAll('#feature-bullets ul li');
         let formattedFeatures = [];
