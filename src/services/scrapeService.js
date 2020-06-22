@@ -1,4 +1,5 @@
 import puppeteer from "puppeteer";
+import {addDocument, createIndex} from "./elasticService";
 
 export async function scrapeSingleProduct(productId) {
     const browser = await puppeteer.launch({
@@ -81,4 +82,53 @@ export async function scrapeSingleProduct(productId) {
     productInfo["couldEstimateInventory"] = couldEstimateInventory;
     await browser.close();
     return productInfo;
+}
+
+async function addProductsToArr(category, page, pageNumber, productsArr) {
+    const searchUrl = "https://www.amazon.com/s?k=" + category.split(' ').join('+') + "&page=" + pageNumber;
+    await page.goto(searchUrl);
+    await page.waitForSelector('body');
+
+    const resultSizeDom = await page.$('div.sg-col-inner');
+    const resultSize = await page.evaluate(element => element.innerText, resultSizeDom);
+
+    const [currentPageResults, totalResults] = resultSize.split("of", 2);
+    const maxEndCurrentResults = currentPageResults.split("-", 2)[1];
+    const totalResultsNumber = totalResults.replace(/[^0-9]+/g, '').trim();
+
+    const products = await page.$$('h2 a.a-link-normal.a-text-normal');
+    for (const product of products) {
+        const url = await page.evaluate(el => el.href, product);
+        if (url.startsWith("https://www.amazon.com/gp/slredirect"))
+            productsArr.push(url.split("%2Fdp%2F", 2)[1].split("%2Fref%3D", 1)[0]);
+        else
+            productsArr.push(url.split("/dp/", 2)[1].split("/ref=", 1)[0]);
+    }
+    await page.waitFor(500);
+    if(parseInt(maxEndCurrentResults) < parseInt(totalResultsNumber) && pageNumber < 5)
+        await addProductsToArr(category, page, pageNumber + 1, productsArr)
+}
+
+export async function scrapeProductsWithQuantitiesInCategory(category) {
+    const browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1920,1080', '--user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3312.0 Safari/537.36"']
+    });
+
+    const page = await browser.newPage();
+    const productsArr = [];
+    await addProductsToArr(category, page, 1, productsArr);
+    await browser.close();
+    const uniqueProducts = productsArr.filter( onlyUnique );
+    let indexId = "products";
+    await createIndex(indexId);
+    await addDocument(indexId, category, {uniqueProducts});
+    // let documentInIndexById = await getDocumentInIndexById(indexId, category);
+    // console.log(documentInIndexById._source.uniqueProducts);
+    return uniqueProducts;
+
+}
+
+function onlyUnique(value, index, self) {
+    return self.indexOf(value) === index;
 }
