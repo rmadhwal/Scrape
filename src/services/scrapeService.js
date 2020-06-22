@@ -1,5 +1,23 @@
 import puppeteer from "puppeteer";
-import {addDocument, createIndex} from "./elasticService";
+import {addDocumentWithId, addDocumentWithoutId, createIndex, getDocumentInIndexById} from "./elasticService";
+
+const productsIndexId = "products";
+
+const escapeXpathString = str => {
+    const splitedQuotes = str.replace(/'/g, `', "'", '`);
+    return `concat('${splitedQuotes}', '')`;
+};
+
+const clickByText = async (page, text) => {
+    const escapedText = escapeXpathString(text);
+    const linkHandlers = await page.$x(`//a[contains(text(), ${escapedText})]`);
+
+    if (linkHandlers.length > 0) {
+        await linkHandlers[0].click();
+    } else {
+        throw new Error(`Link not found: ${text}`);
+    }
+};
 
 export async function scrapeSingleProduct(productId) {
     const browser = await puppeteer.launch({
@@ -7,81 +25,96 @@ export async function scrapeSingleProduct(productId) {
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1920,1080', '--user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3312.0 Safari/537.36"']
     });
 
-    const page = await browser.newPage();
-    const productUrl = "https://www.amazon.com/dp/" + productId;
-    await page.goto(productUrl);
-    await page.waitForSelector('body');
+    try {
+        const page = await browser.newPage();
+        const productUrl = "https://www.amazon.com/dp/" + productId;
+        await page.goto(productUrl);
+        await page.waitForSelector('body');
 
-    const productInfo = await page.evaluate(() => {
+        const productInfo = await page.evaluate(() => {
 
-        let title = document.body.querySelector('#productTitle')?.innerText;
+            let title = document.body.querySelector('#productTitle')?.innerText;
 
-        let reviewCount = document.body.querySelector('#acrCustomerReviewText')?.innerText;
-        let formattedReviewCount = reviewCount.replace(/[^0-9]/g, '').trim();
+            let reviewCount = document.body.querySelector('#acrCustomerReviewText')?.innerText;
+            let formattedReviewCount = reviewCount.replace(/[^0-9]/g, '').trim();
 
-        let ratingElement = document.body.querySelector('.a-icon.a-icon-star').getAttribute('class');
-        let integer = ratingElement.replace(/[^0-9]/g, '').trim();
-        let parsedRating = parseInt(integer) / 10;
+            let ratingElement = document.body.querySelector('.a-icon.a-icon-star').getAttribute('class');
+            let integer = ratingElement.replace(/[^0-9]/g, '').trim();
+            let parsedRating = parseInt(integer) / 10;
 
-        let availability = document.body.querySelector('#availability')?.innerText;
+            let availability = document.body.querySelector('#availability')?.innerText;
 
-        let price = document.body.querySelector('#priceblock_ourprice')?.innerText;
+            let price = document.body.querySelector('#priceblock_ourprice')?.innerText;
 
-        let description = document.body.querySelector('#renewedProgramDescriptionAtf')?.innerText;
+            let description = document.body.querySelector('#renewedProgramDescriptionAtf')?.innerText;
 
-        let features = document.body.querySelectorAll('#feature-bullets ul li');
-        let formattedFeatures = [];
+            let features = document.body.querySelectorAll('#feature-bullets ul li');
+            let formattedFeatures = [];
 
-        features.forEach((feature) => {
-            formattedFeatures.push(feature.innerText);
+            features.forEach((feature) => {
+                formattedFeatures.push(feature.innerText);
+            });
+
+            return {
+                "title": title,
+                "rating": parsedRating,
+                "reviewCount": formattedReviewCount,
+                "price": price,
+                "availability": availability,
+                "description": description,
+                "features": formattedFeatures,
+                "@timestamp": new Date().toISOString()
+            };
         });
-
-        return {
-            "title": title,
-            "rating": parsedRating,
-            "reviewCount": formattedReviewCount,
-            "price": price,
-            "availability": availability,
-            "description": description,
-            "features": formattedFeatures
-        };
-    });
-    let inventoryLeft = -1;
-    let couldEstimateInventory = false;
-    if(productInfo.availability?.includes("left in stock")) {
-        couldEstimateInventory = true;
-        inventoryLeft = productInfo.availability.replace(/[^0-9]/g, '').trim();
-    }
-    else if(productInfo.availability?.includes("In Stock")) {
-        await page.waitFor(500);
-        await page.click("#add-to-cart-button");
-        await page.waitForNavigation();
-        await page.waitFor(500);
-        await page.click("#hlb-view-cart-announce");
-        await page.waitFor(2000);
-        await page.click("select.a-native-dropdown");
-        await page.waitFor(500);
-        await page.click("a#dropdown1_10");
-        await page.waitFor(500);
-        await page.type('input.sc-quantity-textfield', '999', {delay: 20});
-        await page.waitFor(500);
-        await page.click("a#a-autoid-1-announce");
-        await page.waitFor(1000);
-        const popupDom = "div.a-box-inner.a-alert-container";
-        const popupContent = await page.$(popupDom);
-        if(popupContent !== null) {
-
-            const popupText = await page.evaluate(popupContent => popupContent.innerText, popupContent);
-            if(popupText.includes("This seller has only")) {
-                couldEstimateInventory = true;
-                inventoryLeft = popupText.replace(/[^0-9]/g, '').trim();
+        let inventoryLeft = -1;
+        let couldEstimateInventory = false;
+        if (productInfo.availability?.includes("left in stock")) {
+            couldEstimateInventory = true;
+            inventoryLeft = productInfo.availability.replace(/[^0-9]/g, '').trim();
+        } else if (productInfo.availability?.includes("In Stock")) {
+            await page.waitFor(500);
+            await page.click("#add-to-cart-button");
+            const popupButtonSelector = "span#attach-sidesheet-view-cart-button-announce";
+            try {
+                await page.waitForNavigation({waitUntil: 'networkidle2', timeout: 4000});
+                await page.waitFor(500);
+                await page.click("#hlb-view-cart-announce");
+            }
+            catch {
+                await page.click(popupButtonSelector)
+            }
+            await page.waitFor(2000);
+            await page.click("select.a-native-dropdown");
+            await page.waitFor(500);
+            await page.click("a#dropdown1_10");
+            await page.waitFor(500);
+            await page.type('input.sc-quantity-textfield', '999', {delay: 20});
+            await page.waitFor(500);
+            await page.click("a#a-autoid-1-announce");
+            await page.waitFor(1000);
+            const popupDom = "div.a-box-inner.a-alert-container";
+            const popupContent = await page.$(popupDom);
+            if (popupContent !== null) {
+                const popupText = await page.evaluate(popupContent => popupContent.innerText, popupContent);
+                if (popupText.includes("This seller has only")) {
+                    couldEstimateInventory = true;
+                    inventoryLeft = popupText.replace(/[^0-9]/g, '').trim();
+                }
             }
         }
+        productInfo["inventoryLeft"] = inventoryLeft;
+        productInfo["couldEstimateInventory"] = couldEstimateInventory;
+        productInfo["productUrl"] = productUrl;
+        await browser.close();
+        return productInfo;
+    } catch (e) {
+        console.log(e);
+        return {
+            "title": "Couldnt scrape",
+            "productUrl": "https://www.amazon.com/dp/" + productId,
+            "@timestamp": new Date().toISOString()
+        }
     }
-    productInfo["inventoryLeft"] = inventoryLeft;
-    productInfo["couldEstimateInventory"] = couldEstimateInventory;
-    await browser.close();
-    return productInfo;
 }
 
 async function addProductsToArr(category, page, pageNumber, productsArr) {
@@ -120,13 +153,20 @@ export async function scrapeProductsWithQuantitiesInCategory(category) {
     await addProductsToArr(category, page, 1, productsArr);
     await browser.close();
     const uniqueProducts = productsArr.filter( onlyUnique );
-    let indexId = "products";
-    await createIndex(indexId);
-    await addDocument(indexId, category, {uniqueProducts});
-    // let documentInIndexById = await getDocumentInIndexById(indexId, category);
-    // console.log(documentInIndexById._source.uniqueProducts);
-    return uniqueProducts;
 
+    await createIndex(productsIndexId);
+    await addDocumentWithId(productsIndexId, category, {uniqueProducts});
+}
+
+export async function scrapeInfoForEachProduct(category) {
+    let allProductsForCategory = await getDocumentInIndexById(productsIndexId, category);
+    let uniqueProducts = allProductsForCategory._source.uniqueProducts;
+    const categoryIndex = category.replace(/\s/g, '');
+    await createIndex(categoryIndex);
+    for(const product of uniqueProducts) {
+        const productInfo = await scrapeSingleProduct(product);
+        await addDocumentWithoutId(categoryIndex, productInfo);
+    }
 }
 
 function onlyUnique(value, index, self) {

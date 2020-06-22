@@ -12,10 +12,17 @@ export async function createIndex(index) {
     }
 }
 
-export async function addDocument(index, id, body) {
+export async function addDocumentWithId(index, id, body) {
     const hashedId = crypto.createHash('md5').update(id).digest('hex');
     await client.index({
         id: hashedId,
+        index,
+        body
+    });
+}
+
+export async function addDocumentWithoutId(index, body) {
+    await client.index({
         index,
         body
     });
