@@ -1,23 +1,11 @@
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-extra";
+import stealth from "puppeteer-extra-plugin-stealth";
 import {addDocumentWithId, addDocumentWithoutId, createIndex, getDocumentInIndexById} from "./elasticService";
+
+puppeteer.use(stealth());
 
 const productsIndexId = "products";
 
-const escapeXpathString = str => {
-    const splitedQuotes = str.replace(/'/g, `', "'", '`);
-    return `concat('${splitedQuotes}', '')`;
-};
-
-const clickByText = async (page, text) => {
-    const escapedText = escapeXpathString(text);
-    const linkHandlers = await page.$x(`//a[contains(text(), ${escapedText})]`);
-
-    if (linkHandlers.length > 0) {
-        await linkHandlers[0].click();
-    } else {
-        throw new Error(`Link not found: ${text}`);
-    }
-};
 
 export async function scrapeSingleProduct(productId) {
     const browser = await puppeteer.launch({
@@ -36,10 +24,10 @@ export async function scrapeSingleProduct(productId) {
             let title = document.body.querySelector('#productTitle')?.innerText;
 
             let reviewCount = document.body.querySelector('#acrCustomerReviewText')?.innerText;
-            let formattedReviewCount = reviewCount.replace(/[^0-9]/g, '').trim();
+            let formattedReviewCount = reviewCount?.replace(/[^0-9]/g, '').trim();
 
             let ratingElement = document.body.querySelector('.a-icon.a-icon-star').getAttribute('class');
-            let integer = ratingElement.replace(/[^0-9]/g, '').trim();
+            let integer = ratingElement?.replace(/[^0-9]/g, '').trim();
             let parsedRating = parseInt(integer) / 10;
 
             let availability = document.body.querySelector('#availability')?.innerText;
@@ -93,6 +81,7 @@ export async function scrapeSingleProduct(productId) {
             await page.click("a#a-autoid-1-announce");
             await page.waitFor(1000);
             const popupDom = "div.a-box-inner.a-alert-container";
+            await page.waitForSelector(popupDom);
             const popupContent = await page.$(popupDom);
             if (popupContent !== null) {
                 const popupText = await page.evaluate(popupContent => popupContent.innerText, popupContent);

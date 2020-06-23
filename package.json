@@ -23,6 +23,8 @@
     "elasticsearch": "^16.7.1",
     "express": "latest",
     "puppeteer": "^3.3.0",
+    "puppeteer-extra": "^3.1.9",
+    "puppeteer-extra-plugin-stealth": "^2.4.9",
     "querystring": "^0.2.0",
     "url": "^0.11.0",
     "uuid": "^7.0.3"
