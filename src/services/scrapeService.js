@@ -1,6 +1,7 @@
 import puppeteer from "puppeteer-extra";
 import stealth from "puppeteer-extra-plugin-stealth";
 import {addDocumentWithId, addDocumentWithoutId, createIndex, getDocumentInIndexById} from "./elasticService";
+import {blacklistIndex} from "../controllers/scrapeController";
 
 puppeteer.use(stealth());
 
@@ -81,7 +82,7 @@ export async function scrapeSingleProduct(productId) {
             await page.click("a#a-autoid-1-announce");
             await page.waitFor(1000);
             const popupDom = "div.a-box-inner.a-alert-container";
-            await page.waitForSelector(popupDom);
+            await page.waitForSelector(popupDom, {timeout: 3000});
             const popupContent = await page.$(popupDom);
             if (popupContent !== null) {
                 const popupText = await page.evaluate(popupContent => popupContent.innerText, popupContent);
@@ -97,6 +98,7 @@ export async function scrapeSingleProduct(productId) {
         await browser.close();
         return productInfo;
     } catch (e) {
+        await browser.close();
         console.log(e);
         return {
             "title": "Couldnt scrape",
@@ -149,12 +151,19 @@ export async function scrapeProductsWithQuantitiesInCategory(category) {
 
 export async function scrapeInfoForEachProduct(category) {
     let allProductsForCategory = await getDocumentInIndexById(productsIndexId, category);
-    let uniqueProducts = allProductsForCategory._source.uniqueProducts;
+    let uniqueProducts = allProductsForCategory?._source?.uniqueProducts;
     const categoryIndex = category.replace(/\s/g, '');
     await createIndex(categoryIndex);
     for(const product of uniqueProducts) {
-        const productInfo = await scrapeSingleProduct(product);
-        await addDocumentWithoutId(categoryIndex, productInfo);
+        let productInBlacklist = await getDocumentInIndexById(blacklistIndex, product);
+        let isProductBlacklisted = productInBlacklist?._source?.isBlacklisted;
+        if(isProductBlacklisted == null || !isProductBlacklisted) {
+            const productInfo = await scrapeSingleProduct(product);
+            if(productInfo.couldEstimateInventory)
+                await addDocumentWithoutId(categoryIndex, productInfo);
+            else
+                await addDocumentWithId(blacklistIndex, product, {isBlacklisted: true});
+        }
     }
 }
 

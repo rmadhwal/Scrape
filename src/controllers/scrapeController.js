@@ -5,6 +5,9 @@ import {
 } from "../services/scrapeService";
 import url from "url";
 import querystring from "querystring";
+import {createIndex} from "../services/elasticService";
+
+export const blacklistIndex = "blacklist_";
 
 export async function scrapeProduct(req, res) {
     const param = req.body.productId === undefined ? querystring.parse(url.parse(req.url).query).productId : req.body.productId;
@@ -20,6 +23,7 @@ export async function scrapeCategory(req, res) {
 
 export async function initCategoryScraping(req, res) {
     const categoryParam = req.body.category === undefined ? querystring.parse(url.parse(req.url).query).category : req.body.category;
+    await createIndex(blacklistIndex);
     await scrapeProductsWithQuantitiesInCategory(categoryParam);
     await scrapeInfoForEachProduct(categoryParam);
     setInterval(async() => {
@@ -27,6 +31,6 @@ export async function initCategoryScraping(req, res) {
     }, 1000 * 60 * 60 * 5);
     setInterval(async() => {
         await scrapeInfoForEachProduct(categoryParam);
-    }, 1000 * 60 * 60 * 2);
+    }, 1000 * 60 * 30);
     return res.json({status: "first scrape done and  initialized"})
 }

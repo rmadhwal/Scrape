@@ -1,7 +1,7 @@
 import elasticsearch from 'elasticsearch';
 import crypto from "crypto";
 
-export const client = new elasticsearch.Client({ hosts: ['http://54.91.73.252:9200'] });
+export const client = new elasticsearch.Client({ hosts: ['http://103.195.5.137:9200'] });
 
 export async function createIndex(index) {
     let indexExists = await checkIfIndexExists(index);
@@ -30,10 +30,14 @@ export async function addDocumentWithoutId(index, body) {
 
 export async function getDocumentInIndexById(index, id) {
     const hashedId = crypto.createHash('md5').update(id).digest('hex');
-    return await client.get({
+    const val = await client.exists({
         id: hashedId,
         index
-    })
+    });
+    return val ? await client.get({
+        id: hashedId,
+        index
+    }) : null;
 }
 
 async function checkIfIndexExists(index) {
